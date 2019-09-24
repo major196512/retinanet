@@ -358,6 +358,8 @@ class Resizer(object):
         if largest_side * scale > max_side:
             scale = max_side / largest_side
 
+        scale = 1.0
+
         # resize the image with the computed scale
         image = skimage.transform.resize(image, (int(round(rows*scale)), int(round((cols*scale)))))
         rows, cols, cns = image.shape
