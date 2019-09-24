@@ -46,10 +46,10 @@ class RetinaNet(nn.Module):
         if self.training:
             return FocalLoss(classifications, regressions, anchors, annotations)
 
-        predict_boxes = self.regressBoxes(anchors, regression)
+        predict_boxes = self.regressBoxes(anchors, regressions)
         predict_boxes = self.clipBoxes(predict_boxes, img_batch)
 
-        scores = torch.max(classification, dim=2, keepdim=True)[0]
+        scores = torch.max(classifications, dim=2, keepdim=True)[0]
 
         scores_over_thresh = (scores>0.05)[0, :, 0]
 
@@ -57,13 +57,13 @@ class RetinaNet(nn.Module):
             # no boxes to NMS, just return
             return [torch.zeros(0), torch.zeros(0), torch.zeros(0, 4)]
 
-        classification = classification[:, scores_over_thresh, :]
+        classifications = classifications[:, scores_over_thresh, :]
         predict_boxes = predict_boxes[:, scores_over_thresh, :]
         scores = scores[:, scores_over_thresh, :]
 
         anchors_nms_idx, max_k = nms(torch.cat([predict_boxes, scores], dim=2)[0, :, :], 0.5)
         anchors_nms_idx = anchors_nms_idx[:max_k]
 
-        nms_scores, nms_class = classification[0, anchors_nms_idx, :].max(dim=1)
+        nms_scores, nms_class = classifications[0, anchors_nms_idx, :].max(dim=1)
 
         return [nms_scores, nms_class, predict_boxes[0, anchors_nms_idx, :]]
