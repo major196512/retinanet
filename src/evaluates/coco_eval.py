@@ -9,78 +9,84 @@ import os
 
 import torch
 
-def evaluate_coco(dataset, model, threshold=0.05):
-    
+def evaluate_coco(dataset, model, parser, threshold=0.05):
+
     model.eval()
-    
+
     with torch.no_grad():
 
         # start collecting results
         results = []
         image_ids = []
 
-        for index in range(len(dataset)):
-            data = dataset[index]
-            scale = data['scale']
+        if parser.use_bbox_result:
+            for index in range(len(dataset)):
+                image_ids.append(dataset.image_ids[index])
 
-            # run network
-            scores, labels, boxes = model(data['img'].permute(2, 0, 1).cuda().float().unsqueeze(dim=0))
-            scores = scores.cpu()
-            labels = labels.cpu()
-            boxes  = boxes.cpu()
+        else:
+            for index in range(len(dataset)):
+                data = dataset[index]
+                scale = data['scale']
 
-            # correct boxes for image scale
-            boxes /= scale
+                # run network
+                scores, labels, boxes = model(data['img'].permute(2, 0, 1).cuda().float().unsqueeze(dim=0))
+                scores = scores.cpu()
+                labels = labels.cpu()
+                boxes  = boxes.cpu()
 
-            if boxes.shape[0] > 0:
-                # change to (x, y, w, h) (MS COCO standard)
-                boxes[:, 2] -= boxes[:, 0]
-                boxes[:, 3] -= boxes[:, 1]
+                # correct boxes for image scale
+                boxes /= scale
 
-                # compute predicted labels and scores
-                #for box, score, label in zip(boxes[0], scores[0], labels[0]):
-                for box_id in range(boxes.shape[0]):
-                    score = float(scores[box_id])
-                    label = int(labels[box_id])
-                    box = boxes[box_id, :]
+                if boxes.shape[0] > 0:
+                    # change to (x, y, w, h) (MS COCO standard)
+                    boxes[:, 2] -= boxes[:, 0]
+                    boxes[:, 3] -= boxes[:, 1]
 
-                    # scores are sorted, so we can break
-                    if score < threshold:
-                        break
+                    # compute predicted labels and scores
+                    #for box, score, label in zip(boxes[0], scores[0], labels[0]):
+                    for box_id in range(boxes.shape[0]):
+                        score = float(scores[box_id])
+                        label = int(labels[box_id])
+                        box = boxes[box_id, :]
 
-                    # append detection for each positively labeled class
-                    image_result = {
-                        'image_id'    : dataset.image_ids[index],
-                        'category_id' : dataset.label_to_coco_label(label),
-                        'score'       : float(score),
-                        'bbox'        : box.tolist(),
-                    }
+                        # scores are sorted, so we can break
+                        if score < threshold:
+                            break
 
-                    # append detection to results
-                    results.append(image_result)
+                        # append detection for each positively labeled class
+                        image_result = {
+                            'image_id'    : dataset.image_ids[index],
+                            'category_id' : dataset.label_to_coco_label(label),
+                            'score'       : float(score),
+                            'bbox'        : box.tolist(),
+                        }
 
-            # append image to list of processed images
-            image_ids.append(dataset.image_ids[index])
+                        # append detection to results
+                        results.append(image_result)
 
-            # print progress
-            print('{}/{}'.format(index, len(dataset)), end='\r')
+                # append image to list of processed images
+                image_ids.append(dataset.image_ids[index])
 
-        if not len(results):
-            return
+                # print progress
+                print('{}/{}'.format(index, len(dataset)), end='\r')
 
-        # write output
-        json.dump(results, open('{}_bbox_results.json'.format(dataset.set_name), 'w'), indent=4)
+            if not len(results):
+                return
+
+            # write output
+            json.dump(results, open('{}_bbox_results.json'.format(dataset.set_name), 'w'), indent=4)
 
         # load results in COCO evaluation tool
         coco_true = dataset.coco
         coco_pred = coco_true.loadRes('{}_bbox_results.json'.format(dataset.set_name))
 
         # run COCO evaluation
-        coco_eval = COCOeval(coco_true, coco_pred, 'bbox')
-        coco_eval.params.imgIds = image_ids
-        coco_eval.evaluate()
-        coco_eval.accumulate()
-        coco_eval.summarize()
+        if not parser.save_bbox_only:
+            coco_eval = COCOeval(coco_true, coco_pred, 'bbox')
+            coco_eval.params.imgIds = image_ids
+            coco_eval.evaluate()
+            coco_eval.accumulate()
+            coco_eval.summarize()
 
         model.train()
 

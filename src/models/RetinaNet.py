@@ -1,24 +1,27 @@
 import torch
 import torch.nn as nn
 
-from models import ResNet
-from models import FPN
-from models import SubNet
+from . import ResNet
+from . import FPN
+from . import SubNet
 
-from utils.box_utils import BBoxTransform, ClipBoxes
-from utils.anchors import Anchors
-from utils.nms_pytorch import nms
+from ..utils.box_utils import BBoxTransform, ClipBoxes
+from ..utils.anchors import Anchors
+from ..utils.nms_pytorch import nms
 
-from losses import FocalLoss
+from ..losses import FocalLoss
 
 class RetinaNet(nn.Module):
-    def __init__(self, num_classes, resnet_size=50, pretrained=True, num_features=256):
+    def __init__(self, num_classes, resnet_size=50, pretrained=True, **kwargs):
+        self.num_features = kwargs.pop('num_features', 256)
+        self.top_k = kwargs.pop('top_k', 300)
+        self.cls_thres = kwargs.pop('cls_thres', 0.05)
         super(RetinaNet, self).__init__()
 
         self.ResNet = ResNet.SetUpNet(resnet_size, pretrained)
         resnet_out_size = self.ResNet.get_size()
         self.FPN = FPN.PyramidFeatures(resnet_out_size[0], resnet_out_size[1], resnet_out_size[2])
-        self.SubNet = SubNet.SubNet(num_classes=num_classes, num_features=num_features)
+        self.SubNet = SubNet.SubNet(num_classes=num_classes, num_features=self.num_features)
 
         self.anchors = Anchors()
         self.regressBoxes = BBoxTransform()
@@ -44,7 +47,10 @@ class RetinaNet(nn.Module):
         anchors = self.anchors(img_batch)
 
         if self.training:
-            return FocalLoss(classifications, regressions, anchors, annotations)
+            cls_loss, reg_loss = FocalLoss(classifications, regressions, anchors, annotations)
+            cls_loss = cls_loss.mean()
+            reg_loss = reg_loss.mean()
+            return cls_loss, reg_loss
 
         predict_boxes = self.regressBoxes(anchors, regressions)
         predict_boxes = self.clipBoxes(predict_boxes, img_batch)
@@ -52,7 +58,7 @@ class RetinaNet(nn.Module):
         predict_boxes = predict_boxes.cpu().detach()
         classifications = classifications.cpu().detach()
 
-        cls_over_thresh = (classifications>0.05)[0, :, :]
+        cls_over_thresh = (classifications>self.cls_thres)[0, :, :]
 
         if cls_over_thresh.sum() == 0:
             # no boxes to NMS, just return
@@ -69,7 +75,7 @@ class RetinaNet(nn.Module):
 
             if box.shape[0] == 0: continue
 
-            anchors_nms_idx, max_k = nms(box, score, 0.5)
+            anchors_nms_idx, max_k = nms(box, score, overlap=0.5, top_k=self.top_k)
             anchors_nms_idx = anchors_nms_idx[:max_k]
 
             score = score[anchors_nms_idx]
@@ -84,6 +90,6 @@ class RetinaNet(nn.Module):
         indices = torch.cat(indices, dim=0)
         labels = torch.cat(labels, dim=0)
 
-        scores_topk = torch.topk(scores, min(200, scores.shape[0]))[1]
+        scores_topk = torch.topk(scores, min(self.top_k, scores.shape[0]))[1]
 
         return [scores[scores_topk], labels[scores_topk], predict_boxes[0, indices[scores_topk], :]]
