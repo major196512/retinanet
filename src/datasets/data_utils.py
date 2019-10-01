@@ -34,7 +34,6 @@ def collater(data):
 
         if max_num_annots > 0:
             for idx, annot in enumerate(annots):
-                #print(annot.shape)
                 if annot.shape[0] > 0:
                     annot_padded[idx, :annot.shape[0], :] = annot
     else:
@@ -65,8 +64,6 @@ class Resizer(object):
         if largest_side * scale > max_side:
             scale = max_side / largest_side
 
-        scale = 1.0
-
         # resize the image with the computed scale
         image = skimage.transform.resize(image, (int(round(rows*scale)), int(round((cols*scale)))))
         rows, cols, cns = image.shape
@@ -74,21 +71,21 @@ class Resizer(object):
         pad_w = 32 - rows%32
         pad_h = 32 - cols%32
 
-        new_image = np.zeros((rows + pad_w, cols + pad_h, cns)).astype(np.float32)
-        new_image[:rows, :cols, :] = image.astype(np.float32)
+        new_image = np.zeros((rows + pad_w, cols + pad_h, cns))
+        new_image[:rows, :cols, :] = image
 
         annots[:, :4] *= scale
 
-        return {'img': torch.from_numpy(new_image), 'annot': torch.from_numpy(annots), 'scale': scale}
+        return {'img': new_image, 'annot': annots, 'scale': scale}
 
 
 class Augmenter(object):
     """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, sample, flip_x=0.5):
+        image, annots = sample['img'], sample['annot']
 
         if np.random.rand() < flip_x:
-            image, annots = sample['img'], sample['annot']
             image = image[:, ::-1, :]
 
             rows, cols, channels = image.shape
@@ -101,9 +98,10 @@ class Augmenter(object):
             annots[:, 0] = cols - x2
             annots[:, 2] = cols - x_tmp
 
-            sample = {'img': image, 'annot': annots}
-
-        return sample
+        if 'scale' in sample:
+            return {'img': image, 'annot': annots, 'scale' : sample['scale']}
+        else:
+            return {'img': image, 'annot': annots}
 
 
 class Normalizer(object):
@@ -113,10 +111,13 @@ class Normalizer(object):
         self.std = np.array([[[0.229, 0.224, 0.225]]])
 
     def __call__(self, sample):
-
         image, annots = sample['img'], sample['annot']
+        image = ((image.astype(np.float32)/255.0-self.mean)/self.std)
 
-        return {'img':((image.astype(np.float32)-self.mean)/self.std), 'annot': annots}
+        if 'scale' in sample:
+            return {'img':image, 'annot': annots, 'scale' : sample['scale']}
+        else:
+            return {'img':image, 'annot': annots}
 
 class UnNormalizer(object):
     def __init__(self, mean=None, std=None):

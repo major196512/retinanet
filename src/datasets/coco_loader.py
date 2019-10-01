@@ -57,6 +57,9 @@ class CocoDataset(Dataset):
         if self.transform:
             sample = self.transform(sample)
 
+        sample['img'] = torch.from_numpy(sample['img'])
+        sample['annot'] = torch.from_numpy(sample['annot'])
+
         return sample
 
     def load_image(self, image_index):
@@ -67,7 +70,7 @@ class CocoDataset(Dataset):
         if len(img.shape) == 2:
             img = skimage.color.gray2rgb(img)
 
-        return img.astype(np.float32)/255.0
+        return img
 
     def load_annotations(self, image_index):
         # get ground truth annotations

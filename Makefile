@@ -10,6 +10,7 @@ coco_train:
 	--log_dir 'log_coco2014' \
 	--lr 1e-5 \
 	--batch_size 2 \
+	--resume_epoch 13 \
 	--depth 50
 
 tensorboard:

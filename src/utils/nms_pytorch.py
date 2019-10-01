@@ -3,7 +3,7 @@ import torch
 # Original author: Francisco Massa:
 # https://github.com/fmassa/object-detection.torch
 # Ported to PyTorch by Max deGroot (02/01/2017)
-def nms(boxes, overlap=0.5, top_k=200):
+def nms(boxes, scores, overlap=0.5, top_k=300):
     """Apply non-maximum suppression at test time to avoid detecting too many
     overlapping bounding boxes for a given object.
     Args:
@@ -14,17 +14,16 @@ def nms(boxes, overlap=0.5, top_k=200):
     Return:
         The indices of the kept boxes with respect to num_priors.
     """
+    keep = scores.new(scores.size(0)).zero_().long()
+    if boxes.numel() == 0:
+        return keep
 
     x1 = boxes[:, 0]
     y1 = boxes[:, 1]
     x2 = boxes[:, 2]
     y2 = boxes[:, 3]
-    scores = boxes[:, 4]
-    
-    keep = scores.new(scores.size(0)).zero_().long()
-    if boxes.numel() == 0:
-        return keep
     area = torch.mul(x2 - x1, y2 - y1)
+
     v, idx = scores.sort(0)  # sort in ascending order
     # I = I[v >= 0.01]
     idx = idx[-top_k:]  # indices of the top-k largest vals
@@ -46,10 +45,10 @@ def nms(boxes, overlap=0.5, top_k=200):
             break
         idx = idx[:-1]  # remove kept element from view
         # load bboxes of next highest vals
-        torch.index_select(x1, 0, idx, out=xx1)
-        torch.index_select(y1, 0, idx, out=yy1)
-        torch.index_select(x2, 0, idx, out=xx2)
-        torch.index_select(y2, 0, idx, out=yy2)
+        xx1 = x1[idx]
+        yy1 = y1[idx]
+        xx2 = x2[idx]
+        yy2 = y2[idx]
         # store element-wise max with next highest score
         xx1 = torch.clamp(xx1, min=x1[i])
         yy1 = torch.clamp(yy1, min=y1[i])
@@ -64,7 +63,7 @@ def nms(boxes, overlap=0.5, top_k=200):
         h = torch.clamp(h, min=0.0)
         inter = w*h
         # IoU = i / (area(a) + area(b) - i)
-        rem_areas = torch.index_select(area, 0, idx)  # load remaining areas)
+        rem_areas = area[idx]  # load remaining areas)
         union = (rem_areas - inter) + area[i]
         IoU = inter/union  # store result in iou
         # keep only elements with an IoU <= overlap

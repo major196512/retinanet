@@ -110,6 +110,14 @@ def main(args=None):
         retinanet = retinanet.to(device)
     retinanet.training = True
 
+    if parser.dataset == 'coco':
+        print('\nEvaluating dataset')
+        coco_eval.evaluate_coco(dataset_val, retinanet)
+
+    elif parser.dataset == 'csv' and parser.csv_val is not None:
+        print('\nEvaluating dataset')
+        mAP = csv_eval.evaluate(dataset_val, retinanet)
+
     optimizer = optim.Adam(retinanet.parameters(), lr=parser.lr)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
     loss_hist = collections.deque(maxlen=500)

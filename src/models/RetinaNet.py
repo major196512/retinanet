@@ -49,21 +49,41 @@ class RetinaNet(nn.Module):
         predict_boxes = self.regressBoxes(anchors, regressions)
         predict_boxes = self.clipBoxes(predict_boxes, img_batch)
 
-        scores = torch.max(classifications, dim=2, keepdim=True)[0]
+        predict_boxes = predict_boxes.cpu().detach()
+        classifications = classifications.cpu().detach()
 
-        scores_over_thresh = (scores>0.05)[0, :, 0]
+        cls_over_thresh = (classifications>0.05)[0, :, :]
 
-        if scores_over_thresh.sum() == 0:
+        if cls_over_thresh.sum() == 0:
             # no boxes to NMS, just return
             return [torch.zeros(0), torch.zeros(0), torch.zeros(0, 4)]
 
-        classifications = classifications[:, scores_over_thresh, :]
-        predict_boxes = predict_boxes[:, scores_over_thresh, :]
-        scores = scores[:, scores_over_thresh, :]
+        scores = []
+        indices = []
+        labels = []
 
-        anchors_nms_idx, max_k = nms(torch.cat([predict_boxes, scores], dim=2)[0, :, :], 0.5)
-        anchors_nms_idx = anchors_nms_idx[:max_k]
+        for c in range(classifications.shape[2]):
+            cls_ind = cls_over_thresh[:, c]
+            box = predict_boxes[0, cls_ind, :]
+            score = classifications[0, cls_ind, c]
 
-        nms_scores, nms_class = classifications[0, anchors_nms_idx, :].max(dim=1)
+            if box.shape[0] == 0: continue
 
-        return [nms_scores, nms_class, predict_boxes[0, anchors_nms_idx, :]]
+            anchors_nms_idx, max_k = nms(box, score, 0.5)
+            anchors_nms_idx = anchors_nms_idx[:max_k]
+
+            score = score[anchors_nms_idx]
+            cls_ind = cls_ind.nonzero()[anchors_nms_idx, 0]
+            label = c * torch.ones(cls_ind.shape[0], dtype=torch.int64)
+
+            scores.append(score)
+            indices.append(cls_ind)
+            labels.append(label)
+
+        scores = torch.cat(scores, dim=0)
+        indices = torch.cat(indices, dim=0)
+        labels = torch.cat(labels, dim=0)
+
+        scores_topk = torch.topk(scores, min(200, scores.shape[0]))[1]
+
+        return [scores[scores_topk], labels[scores_topk], predict_boxes[0, indices[scores_topk], :]]
