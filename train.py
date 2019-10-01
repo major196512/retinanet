@@ -55,6 +55,7 @@ def parse_args(args):
     parser.add_argument('--clip_grad_norm', help='Clip Grad Norm Parameter', type=float, default=1e-3)
 
     parser.add_argument('--testOnly', help='Test only', action='store_true')
+    parser.add_argument('--trainOnly', help='Train only', action='store_true')
     parser.add_argument('--use_bbox_result', help='Load bbox_result.json in Evaluation Section', action='store_true')
     parser.add_argument('--save_bbox_only', help='only Save bbox_result.json in Evaluation Section', action='store_true')
     parser.add_argument('--top_k', help='nms top_k', default=300)
@@ -197,7 +198,9 @@ def main(args=None):
         ########################################################################
         # Validation
         ########################################################################
-        eval_model(parser, dataset_val, retinanet)
+        if not parser.trainOnly:
+            eval_model(parser, dataset_val, retinanet)
+            
         scheduler.step(np.mean(epoch_loss))
         torch.save(retinanet.state_dict(), './checkpoints/{}_{}.pt'.format(parser.save_name, epoch_num+1))
 
