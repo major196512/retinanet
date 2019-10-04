@@ -60,8 +60,8 @@ class ClassificationModel(nn.Module):
         self.conv4 = nn.Conv2d(feature_size, feature_size, kernel_size=3, padding=1)
         self.act4 = nn.ReLU()
 
-        self.output = nn.Conv2d(feature_size, num_anchors*num_classes, kernel_size=3, padding=1)
-        self.output_act = nn.Sigmoid()
+        self.cls = nn.Conv2d(feature_size, num_anchors*num_classes, kernel_size=3, padding=1)
+        self.cls_sig = nn.Sigmoid()
 
     def forward(self, x):
 
@@ -77,8 +77,8 @@ class ClassificationModel(nn.Module):
         out = self.conv4(out)
         out = self.act4(out)
 
-        out = self.output(out)
-        out = self.output_act(out)
+        out = self.cls(out)
+        out = self.cls_sig(out)
 
         # out is B x C x W x H, with C = n_classes + n_anchors
         out1 = out.permute(0, 2, 3, 1)
@@ -103,7 +103,7 @@ class SubNet(nn.Module):
                 m.bias.data.zero_()
 
         #self.classificationModel.output.weight.data.fill_(0)
-        self.classificationModel.output.bias.data.fill_(-math.log((1.0 - prior) / prior))
+        self.classificationModel.cls.bias.data.fill_(-math.log((1.0 - prior) / prior))
 
         #self.regressionModel.output.weight.data.fill_(0)
         #self.regressionModel.output.bias.data.fill_(0)
