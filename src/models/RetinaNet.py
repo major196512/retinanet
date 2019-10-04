@@ -62,7 +62,7 @@ class RetinaNet(nn.Module):
 
         if cls_over_thresh.sum() == 0:
             # no boxes to NMS, just return
-            return [torch.zeros(0), torch.zeros(0), torch.zeros(0, 4)]
+            return [torch.zeros(0).cuda(), torch.zeros(0).cuda(), torch.zeros(0, 4).cuda()]
 
         scores = []
         indices = []
