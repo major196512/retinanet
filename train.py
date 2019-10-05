@@ -200,7 +200,7 @@ def main(args=None):
         ########################################################################
         if not parser.trainOnly:
             eval_model(parser, dataset_val, retinanet)
-            
+
         scheduler.step(np.mean(epoch_loss))
         torch.save(retinanet.state_dict(), './checkpoints/{}_{}.pt'.format(parser.save_name, epoch_num+1))
 
