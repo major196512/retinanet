@@ -118,7 +118,7 @@ def FocalLoss(classifications, regressions, anchors, annotations):
             targets = targets/torch.Tensor([[0.1, 0.1, 0.2, 0.2]]).cuda()
 
 
-            negative_indices = 1 - positive_indices
+            negative_indices = ~positive_indices
 
             regression_diff = torch.abs(targets - regression[positive_indices, :])
 
@@ -131,4 +131,5 @@ def FocalLoss(classifications, regressions, anchors, annotations):
         else:
             regression_losses.append(torch.tensor(0).float().cuda())
 
-    return torch.stack(classification_losses).mean(dim=0, keepdim=True), torch.stack(regression_losses).mean(dim=0, keepdim=True)
+    #return torch.stack(classification_losses).mean(dim=0, keepdim=True), torch.stack(regression_losses).mean(dim=0, keepdim=True)
+    return torch.stack(classification_losses), torch.stack(regression_losses)

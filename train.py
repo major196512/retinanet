@@ -29,6 +29,7 @@ from .evaluates import csv_eval
 from tensorboardX import SummaryWriter
 
 print('CUDA available: {}'.format(torch.cuda.is_available()))
+#torch.backends.cudnn.enabled = False
 
 def parse_args(args):
     parser = argparse.ArgumentParser(description='Simple training script for training a RetinaNet network.')
@@ -53,6 +54,7 @@ def parse_args(args):
     parser.add_argument('--num_worker', help='Number of workers', type=int, default=0)
     parser.add_argument('--lr', help='Learning Rate', type=float, default=1e-5)
     parser.add_argument('--clip_grad_norm', help='Clip Grad Norm Parameter', type=float, default=1e-3)
+    parser.add_argument('--inverse', help='Use Inverse FPN', action='store_true')
 
     parser.add_argument('--testOnly', help='Test only', action='store_true')
     parser.add_argument('--trainOnly', help='Train only', action='store_true')
@@ -86,17 +88,17 @@ def dataset_loader(parser):
     else:
         raise ValueError('Dataset type not understood (must be csv or coco), exiting.')
 
-    sampler = AspectRatioBasedSampler(dataset_train, batch_size=parser.batch_size, drop_last=False)
-    dataloader_train = DataLoader(dataset_train, num_workers=parser.num_worker, collate_fn=collater, batch_sampler=sampler)
+    sampler = AspectRatioBasedSampler(dataset_train, batch_size=parser.batch_size*torch.cuda.device_count(), drop_last=False)
+    dataloader_train = DataLoader(dataset_train, num_workers=2*parser.batch_size*torch.cuda.device_count(), collate_fn=collater, batch_sampler=sampler)
 
     if dataset_val is not None:
         sampler_val = AspectRatioBasedSampler(dataset_val, batch_size=1, drop_last=False)
-        dataloader_val = DataLoader(dataset_val, num_workers=parser.num_worker, collate_fn=collater, batch_sampler=sampler_val)
+        dataloader_val = DataLoader(dataset_val, num_workers=2, collate_fn=collater, batch_sampler=sampler_val)
 
     return dataloader_train, dataloader_val, dataset_train, dataset_val
 
 def load_model(parser, num_classes):
-    retinanet = RetinaNet(num_classes=num_classes, resnet_size=parser.depth, pretrained=True, top_k=parser.top_k)
+    retinanet = RetinaNet(num_classes=num_classes, resnet_size=parser.depth, pretrained=True, top_k=parser.top_k, inverse=parser.inverse)
 
     if parser.resume_epoch > 0:
         retinanet = torch.nn.DataParallel(retinanet)
@@ -114,6 +116,7 @@ def load_model(parser, num_classes):
 
     return retinanet
 
+#def eval_model(parser, dataset_val, model):
 def eval_model(parser, dataset_val, model):
     if parser.dataset == 'coco':
         print('\nEvaluating dataset')
@@ -147,7 +150,7 @@ def main(args=None):
     # optimizer
     ########################################################################
     optimizer = optim.Adam(retinanet.parameters(), lr=parser.lr)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
     loss_hist = collections.deque(maxlen=500)
 
     ########################################################################
@@ -166,8 +169,10 @@ def main(args=None):
             optimizer.zero_grad()
 
             cls_loss, reg_loss = retinanet([data['img'].cuda().float(), data['annot'].cuda().float()])
+            cls_loss = cls_loss.mean()
+            reg_loss = reg_loss.mean()
             loss = cls_loss + reg_loss
-            if bool(loss == 0): continue
+            if loss == 0: continue
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(retinanet.parameters(), parser.clip_grad_norm)
@@ -198,11 +203,11 @@ def main(args=None):
         ########################################################################
         # Validation
         ########################################################################
-        if not parser.trainOnly:
-            eval_model(parser, dataset_val, retinanet)
-
         scheduler.step(np.mean(epoch_loss))
         torch.save(retinanet.state_dict(), './checkpoints/{}_{}.pt'.format(parser.save_name, epoch_num+1))
+
+        if not parser.trainOnly:
+            eval_model(parser, dataset_val, retinanet)
 
     retinanet.eval()
     torch.save(retinanet, 'checkpoints/{}_final.pt'.format(parser.save_name))
